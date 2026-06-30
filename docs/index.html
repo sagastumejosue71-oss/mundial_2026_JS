@@ -515,6 +515,7 @@ function renderHoy(){
 }
 
 function renderPartidos(){
+  const today=new Date().toISOString().slice(0,10);
   const chips=[
     {k:'resultados',l:'✅ Resultados'},{k:'proximos',l:'🕐 Próximos'},
     {k:'all',l:'Todos'},{k:'group',l:'Grupos'},{k:'r32',l:'R-32'},
@@ -522,7 +523,7 @@ function renderPartidos(){
   ];
   let filtered;
   if(filterStage==='resultados') filtered=M.filter(x=>played(x)).reverse();
-  else if(filterStage==='proximos') filtered=M.filter(x=>!played(x));
+  else if(filterStage==='proximos') filtered=M.filter(x=>!played(x)&&x.date>=today);
   else if(filterStage==='all') filtered=M;
   else filtered=M.filter(x=>x.stage===filterStage);
 
