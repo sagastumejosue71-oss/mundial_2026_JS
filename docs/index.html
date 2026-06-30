@@ -549,23 +549,39 @@ function renderLlaves(){
     const ms=M.filter(x=>x.stage===s.k);
     h+=`<div class="sec-ttl">${s.l}</div>`;
     ms.forEach(x=>{
-      const p=played(x),hw=p&&x.hr>x.ar,aw=p&&x.ar>x.hr;
-      h+=`<div class="bm" onclick="openLiveView(${x.id})">
+      const lmeta=liveMeta[x.id]||{};
+      const liveScore=lmeta.score;
+      const liveMinute=lmeta.minute||'';
+      const isFinished=played(x)||lmeta.minute==='Final';
+      const isLive=liveScore&&!isFinished&&liveMinute&&liveMinute!=='Próximo';
+
+      const hs=played(x)?x.hr:(liveScore!=null?liveScore.home:null);
+      const as_=played(x)?x.ar:(liveScore!=null?liveScore.away:null);
+      const showScore=hs!==null&&as_!==null;
+
+      const hw=showScore&&hs>as_;
+      const aw=showScore&&as_>hs;
+
+      let statusBadge='';
+      if(isLive) statusBadge=`<span style="color:var(--red);font-weight:700;margin-left:8px;font-size:10px">● ${liveMinute}</span>`;
+      else if(isFinished) statusBadge=`<span style="color:var(--green);margin-left:8px;font-size:10px">✓ Final</span>`;
+
+      h+=`<div class="bm${isLive?' is-live':''}" onclick="openLiveView(${x.id})" style="${isLive?'border-color:var(--red)':''}">
         <div class="bt${hw?' win':''}">
           <span style="display:flex;align-items:center;gap:8px">
             <img src="https://flagcdn.com/w80/${CODES[x.h]||'un'}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" style="width:22px;height:22px;border-radius:50%;object-fit:cover">
             <span class="${x.h==='Por definir'?'tbd':''}">${x.h}</span>
           </span>
-          <span class="bs">${p?x.hr:''}</span>
+          <span class="bs">${showScore?hs:''}</span>
         </div>
         <div class="bt${aw?' win':''}">
           <span style="display:flex;align-items:center;gap:8px">
             <img src="https://flagcdn.com/w80/${CODES[x.a]||'un'}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" style="width:22px;height:22px;border-radius:50%;object-fit:cover">
             <span class="${x.a==='Por definir'?'tbd':''}">${x.a}</span>
           </span>
-          <span class="bs">${p?x.ar:''}</span>
+          <span class="bs">${showScore?as_:''}</span>
         </div>
-        <div class="bmeta"><i class="bi bi-geo-alt"></i> ${x.venue} · ${fmtD(x.date)} ${gtT(x.time)} GT</div>
+        <div class="bmeta"><i class="bi bi-geo-alt"></i> ${x.venue} · ${fmtD(x.date)} ${gtT(x.time)} GT${statusBadge}</div>
       </div>`;
     });
   });
