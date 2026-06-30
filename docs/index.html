@@ -785,16 +785,22 @@ async function fetchLive(){
   const dot=document.getElementById('dot'),lbt=document.getElementById('liveT');
   dot.className='live-dot spinning'; lbt.textContent='Actualizando...';
   const today=new Date().toISOString().slice(0,10);
-  const pending=M.filter(x=>x.date===today&&!played(x));
-  const todayHasMatches=M.some(x=>x.date===today);
-  if(!todayHasMatches){dot.className='live-dot pulse';lbt.textContent='EN VIVO';busy=false;return;}
+  // Incluye partidos pasados sin resultado: si ESPN no se consultó a tiempo
+  // el día del partido, seguimos intentando hasta obtener el resultado real.
+  const pending=M.filter(x=>x.date<=today&&!played(x));
   if(!pending.length){dot.className='live-dot pulse';lbt.textContent='EN VIVO';busy=false;return;}
 
   try{
-    const response=await fetch(ESPN_SCOREBOARD_URL,{cache:'no-store'});
-    if(!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data=await response.json();
-    window.__espnLiveEvents=data.events||[];
+    const dates=[...new Set(pending.map(x=>x.date))];
+    let allEvents=[];
+    for(const d of dates){
+      const dParam=d.replace(/-/g,'');
+      const response=await fetch(`${ESPN_SCOREBOARD_URL}?dates=${dParam}`,{cache:'no-store'});
+      if(!response.ok) continue;
+      const data=await response.json();
+      allEvents=allEvents.concat(data.events||[]);
+    }
+    window.__espnLiveEvents=allEvents;
 
     let changed=false;
     pending.forEach(x=>{
