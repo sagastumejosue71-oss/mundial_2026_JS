@@ -849,6 +849,8 @@ async function fetchLive(){
     if(changed){
       if(curTab==='hoy')renderHoy();
       else if(curTab==='partidos')renderPartidos();
+      else if(curTab==='llaves')renderLlaves();
+      else if(curTab==='live')renderLiveView();
     }
   }catch(e){
     console.warn('No se pudo cargar el scoreboard de ESPN:', e);
