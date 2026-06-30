@@ -447,7 +447,7 @@ function card(x, alarm=false){
         </div>
         <div class="pred-names"><span>${x.h==='Por definir'?'Local':x.h.split(' ')[0]}</span><span>Empate</span><span>${x.a==='Por definir'?'Visita':x.a.split(' ')[0]}</span></div>
       </div>
-      ${!p?`<div class="pred-summary" style="margin-top:12px;padding:10px 14px;background:#13161c;border-radius:12px;font-size:13px;color:#c0c8d4;display:flex;justify-content:space-between;align-items:center">
+      ${!p&&x.h!=='Por definir'&&x.a!=='Por definir'?`<div class="pred-summary" style="margin-top:12px;padding:10px 14px;background:#13161c;border-radius:12px;font-size:13px;color:#c0c8d4;display:flex;justify-content:space-between;align-items:center">
         <span>Marcador estimado: <strong style="color:#fff">${pr.s}</strong></span>
         <span style="color:${pr.w==='Empate'?'#6fff9f':pr.w===x.h?'#6fff9f':'#ff8a8a'}">${pr.w}</span>
       </div>`:''}
@@ -527,11 +527,13 @@ function renderPartidos(){
   else if(filterStage==='all') filtered=M;
   else filtered=M.filter(x=>x.stage===filterStage);
 
+  const prevSearch=document.getElementById('searchBox')?.value||'';
   let h=`<div class="fscroll">${chips.map(c=>`<button class="fchip${filterStage===c.k?' active':''}" onclick="setF('${c.k}')">${c.l}</button>`).join('')}</div>
-    <input class="sbox" type="text" placeholder="🔍 Buscar equipo..." oninput="doSearch(this.value)">`;
+    <input id="searchBox" class="sbox" type="text" placeholder="🔍 Buscar equipo..." value="${prevSearch}" oninput="doSearch(this.value)">`;
   if(!filtered.length) h+=`<div class="empty"><i class="bi bi-search" style="font-size:32px;display:block;margin-bottom:8px"></i>Sin resultados</div>`;
   else filtered.forEach(x=>{h+=card(x);});
   document.getElementById('partidos').innerHTML=h;
+  if(prevSearch) doSearch(prevSearch);
 }
 function setF(k){filterStage=k;renderPartidos();}
 function doSearch(q){const ql=q.toLowerCase();document.querySelectorAll('#partidos .mc').forEach(c=>{c.style.display=c.textContent.toLowerCase().includes(ql)?'':'none';});}
@@ -573,7 +575,7 @@ function renderLlaves(){
 function renderStats(){
   const pl=M.filter(x=>played(x));
   const gls=pl.reduce((s,x)=>s+x.hr+x.ar,0);
-  const avg=(gls/pl.length).toFixed(1);
+  const avg=(pl.length ? gls/pl.length : 0).toFixed(1);
   const tg={};
   pl.forEach(x=>{tg[x.h]=(tg[x.h]||0)+x.hr;tg[x.a]=(tg[x.a]||0)+x.ar;});
   const top=Object.entries(tg).sort((a,b)=>b[1]-a[1]).slice(0,6);
@@ -692,7 +694,7 @@ function renderLiveView(){
   const lv=liveData[x.id]||''; const meta = x.id ? (liveMeta[x.id] || {}) : {};
   const detail=liveDetails[selectedMatchId]||{};
   const movement=meta.latestAction || meta.summary || '';
-  const score=meta.score ? `${meta.score.home} - ${meta.score.away}` : `${x.hr ?? '0'} - ${x.ar ?? '0'}`;
+  const score=meta.score ? `${meta.score.home} - ${meta.score.away}` : (played(x) ? `${x.hr} - ${x.ar}` : `${gtT(x.time)} GT`);
   const minute=meta.minute || (detail.minute ? detail.minute : 'Por comenzar');
   const events=(detail.events||[]).slice(0,12);
   if(minute==='Entretiempo' && !events.some(ev=>/entretiempo|descanso|halftime/i.test(ev.text))){
@@ -768,6 +770,8 @@ async function fetchLive(){
   dot.className='live-dot spinning'; lbt.textContent='Actualizando...';
   const today=new Date().toISOString().slice(0,10);
   const pending=M.filter(x=>x.date===today&&!played(x));
+  const todayHasMatches=M.some(x=>x.date===today);
+  if(!todayHasMatches){dot.className='live-dot pulse';lbt.textContent='EN VIVO';busy=false;return;}
   if(!pending.length){dot.className='live-dot pulse';lbt.textContent='EN VIVO';busy=false;return;}
 
   try{
@@ -852,6 +856,7 @@ async function fetchLive(){
       else if(curTab==='partidos')renderPartidos();
       else if(curTab==='llaves')renderLlaves();
       else if(curTab==='live')renderLiveView();
+      else if(curTab==='stats')renderStats();
     }
   }catch(e){
     console.warn('No se pudo cargar el scoreboard de ESPN:', e);
@@ -867,10 +872,16 @@ function goTab(id,el){
   el.classList.add('active');
   document.getElementById(id).classList.add('active');
   curTab=id;
-  if(id==='live') renderLiveView();
+  if(id==='hoy')renderHoy();
+  else if(id==='partidos')renderPartidos();
+  else if(id==='llaves')renderLlaves();
+  else if(id==='stats')renderStats();
+  else if(id==='live')renderLiveView();
 }
 
 // ===== BOOT =====
+historyMatches=M.filter(x=>played(x)).map(x=>({...x}));
+historyMatches.sort((a,b)=>compareMatchDate(b,a));
 renderHoy(); renderPartidos(); renderLlaves(); renderStats(); renderLiveView();
 setTimeout(fetchLive,1500);
 setInterval(fetchLive, 30000);
