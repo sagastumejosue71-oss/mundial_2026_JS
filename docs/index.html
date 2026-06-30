@@ -341,8 +341,8 @@ let liveData={}, liveMeta={}, filterStage='resultados', curTab='hoy', busy=false
 
 // ===== UTILS =====
 const fmtD=d=>{const[,m,dy]=d.split('-');return `${parseInt(dy)} ${MONTHS[parseInt(m)]}`;};
-const gtT=t=>{const[h,m]=t.split(':').map(Number);let g=h-1;if(g<0)g+=24;return `${String(g).padStart(2,'0')}:${String(m).padStart(2,'0')}`;};
-const alarmT=t=>{const[h,m]=t.split(':').map(Number);let tot=h*60+m-40-60;if(tot<0)tot+=1440;return `${String(Math.floor(tot/60)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;};
+const gtT=t=>{const[h,m]=t.split(':').map(Number);let g=h-2;if(g<0)g+=24;return `${String(g).padStart(2,'0')}:${String(m).padStart(2,'0')}`;};
+const alarmT=t=>{const[h,m]=t.split(':').map(Number);let tot=h*60+m-40-120;if(tot<0)tot+=1440;return `${String(Math.floor(tot/60)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;};
 const played=x=>x.hr!==null&&x.ar!==null;
 function fmtClock(status){
   const display=(status?.displayClock||'').trim();
