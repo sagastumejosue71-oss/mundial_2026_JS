@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import nodemailer from 'nodemailer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MATCHES_PATH = path.join(__dirname, '..', 'data', 'matches.json');
@@ -11,18 +12,17 @@ const NOTIFIED_PATH = path.join(__dirname, '..', 'data', 'notified.json');
 const WINDOW_MAX_MIN = 42;
 const WINDOW_MIN_MIN = 28;
 
-const ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const FROM = process.env.TWILIO_WHATSAPP_FROM; // ej. 'whatsapp:+14155238886'
-const RECIPIENTS = (process.env.WHATSAPP_RECIPIENTS || '')
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
+const RECIPIENTS = (process.env.EMAIL_RECIPIENTS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 
-if (!ACCOUNT_SID || !AUTH_TOKEN || !FROM) {
-  console.error('Faltan credenciales de Twilio (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_WHATSAPP_FROM).');
+if (!EMAIL_USER || !EMAIL_PASS) {
+  console.error('Faltan credenciales de correo (EMAIL_USER / EMAIL_PASS).');
   process.exit(1);
 }
 if (!RECIPIENTS.length) {
-  console.error('No hay destinatarios configurados en WHATSAPP_RECIPIENTS.');
+  console.error('No hay destinatarios configurados en EMAIL_RECIPIENTS.');
   process.exit(1);
 }
 
@@ -44,39 +44,44 @@ function predictedScore(ph, pd, pa) {
   return { fav: 'draw', score: '1-1' };
 }
 
-function buildMessage(m) {
+function buildEmail(m) {
   const { fav, score } = predictedScore(m.ph, m.pd, m.pa);
   const favText = fav === 'home' ? m.h : fav === 'away' ? m.a : 'Empate';
-  return [
-    '⚽ *¡Faltan 40 minutos!*',
+  const subject = `⚽ En 40 min: ${m.h} vs ${m.a}`;
+  const text = [
+    `¡Faltan 40 minutos para el partido!`,
+    ``,
     `${m.h} vs ${m.a}`,
-    `🏟 ${m.venue}`,
-    `🕐 ${gtTime(m.time)} GT`,
-    '',
-    '🤖 *Pronóstico:*',
+    `Estadio: ${m.venue}`,
+    `Hora: ${gtTime(m.time)} GT`,
+    ``,
+    `Pronóstico:`,
     `${m.h}: ${m.ph}%  ·  Empate: ${m.pd}%  ·  ${m.a}: ${m.pa}%`,
     `Favorito: ${favText}  ·  Marcador estimado: ${score}`,
   ].join('\n');
-}
-
-async function sendWhatsApp(to, body) {
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT_SID}/Messages.json`;
-  const auth = Buffer.from(`${ACCOUNT_SID}:${AUTH_TOKEN}`).toString('base64');
-  const params = new URLSearchParams({ From: FROM, To: `whatsapp:${to}`, Body: body });
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Twilio error ${res.status} enviando a ${to}: ${text}`);
-  }
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;max-width:420px;margin:0 auto">
+      <h2 style="color:#00a651;margin-bottom:4px">⚽ ¡Faltan 40 minutos!</h2>
+      <p style="font-size:18px;font-weight:700;margin:8px 0">${m.h} vs ${m.a}</p>
+      <p style="color:#5b6b7e;margin:2px 0">📍 ${m.venue}</p>
+      <p style="color:#5b6b7e;margin:2px 0">🕐 ${gtTime(m.time)} GT</p>
+      <div style="background:#f4f7fb;border-radius:10px;padding:12px 14px;margin-top:14px">
+        <p style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#5b6b7e;margin:0 0 6px">🤖 Pronóstico</p>
+        <p style="margin:0 0 4px">${m.h}: <b>${m.ph}%</b> &nbsp;·&nbsp; Empate: <b>${m.pd}%</b> &nbsp;·&nbsp; ${m.a}: <b>${m.pa}%</b></p>
+        <p style="margin:0">Favorito: <b>${favText}</b> &nbsp;·&nbsp; Marcador estimado: <b>${score}</b></p>
+      </div>
+    </div>`;
+  return { subject, text, html };
 }
 
 async function main() {
   const now = Date.now();
   let changed = false;
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+  });
 
   for (const m of matches) {
     if (notified.has(m.id)) continue;
@@ -86,14 +91,19 @@ async function main() {
     const diffMin = (kickoff - now) / 60000;
 
     if (diffMin <= WINDOW_MAX_MIN && diffMin > WINDOW_MIN_MIN) {
-      const body = buildMessage(m);
-      console.log(`Enviando aviso para partido ${m.id}: ${m.h} vs ${m.a}`);
-      for (const to of RECIPIENTS) {
-        try {
-          await sendWhatsApp(to, body);
-        } catch (e) {
-          console.error(e.message);
-        }
+      const { subject, text, html } = buildEmail(m);
+      console.log(`Enviando aviso por correo para partido ${m.id}: ${m.h} vs ${m.a}`);
+      try {
+        await transporter.sendMail({
+          from: `Mundial 2026 ⚽ <${EMAIL_USER}>`,
+          to: RECIPIENTS.join(','),
+          subject,
+          text,
+          html,
+        });
+      } catch (e) {
+        console.error(`Error enviando correo para partido ${m.id}:`, e.message);
+        continue;
       }
       notified.add(m.id);
       changed = true;
