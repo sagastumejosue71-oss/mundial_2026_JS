@@ -1,0 +1,30 @@
+name: Sincronizar resultados en vivo
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sincronizar resultados desde ESPN
+        run: node scripts/sync-results.mjs
+
+      - name: Commit resultados actualizados
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/results.json
+          git diff --cached --quiet || git commit -m "chore: actualizar resultados en vivo [skip ci]"
+          git push

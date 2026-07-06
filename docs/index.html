@@ -204,12 +204,12 @@ const STAGE_PILL={group:'sp-g',r32:'sp-32',r16:'sp-16',qf:'sp-qf',sf:'sp-sf','3r
 const MONTHS=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 const ESPN_SCOREBOARD_URL='https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard';
 const TEAM_ALIASES={
-  'México':'Mexico','Sudáfrica':'South Africa','Corea del Sur':'South Korea','Chequia':'Czech Republic','Canadá':'Canada','Bosnia y Herz.':'Bosnia and Herzegovina',
+  'México':'Mexico','Sudáfrica':'South Africa','Corea del Sur':'South Korea','Chequia':'Czech Republic','Canadá':'Canada','Bosnia y Herz.':'Bosnia-Herzegovina',
   'USA':'United States','Paraguay':'Paraguay','Qatar':'Qatar','Suiza':'Switzerland','Brasil':'Brazil','Marruecos':'Morocco','Haití':'Haiti','Escocia':'Scotland','Australia':'Australia',
   'Türkiye':'Turkey','Alemania':'Germany','Curazao':'Curaçao','C.de Marfil':'Ivory Coast','Ecuador':'Ecuador','P.Bajos':'Netherlands','Japón':'Japan','Suecia':'Sweden','Túnez':'Tunisia',
   'Bélgica':'Belgium','Egipto':'Egypt','Irán':'Iran','Nueva Zelanda':'New Zealand','España':'Spain','Cabo Verde':'Cape Verde','Arabia S.':'Saudi Arabia','Uruguay':'Uruguay',
   'Francia':'France','Senegal':'Senegal','Iraq':'Iraq','Noruega':'Norway','Argentina':'Argentina','Argelia':'Algeria','Austria':'Austria','Jordania':'Jordan','Portugal':'Portugal',
-  'RD Congo':'DR Congo','Uzbekistán':'Uzbekistan','Colombia':'Colombia','Inglaterra':'England','Croacia':'Croatia','Ghana':'Ghana','Panamá':'Panama'
+  'RD Congo':'Congo DR','Uzbekistán':'Uzbekistan','Colombia':'Colombia','Inglaterra':'England','Croacia':'Croatia','Ghana':'Ghana','Panamá':'Panama'
 };
 const LIVE_EVENTS={
   74:["⚽ Min 12' - Alemania se pone al frente con un disparo potente.","⚽ Min 24' - Paraguay empata tras un contragolpe muy peligroso.","⚠️ Min 40' - El partido está muy parejo y ambos equipos buscan el liderazgo."],
@@ -388,18 +388,23 @@ function ensureHistoryEntry(match){
 // Cada regla dice: el ganador del partido "from" pasa al slot "slot" (h/a) del
 // partido "to". Para semifinales ademas se define a donde va el perdedor
 // (3er lugar), ya que ese cruce sale de los dos perdedores de semis.
+// Verificado contra el bracket real (ESPN) del Mundial 2026, no supuesto por
+// orden de arreglo: Canada-Marruecos, Paraguay-Francia, Brasil-Noruega,
+// Mexico-Inglaterra en octavos; Francia-Marruecos, Portugal/Espana vs
+// USA/Belgica, Noruega-Inglaterra, Argentina/Egipto vs Suiza/Colombia en
+// cuartos.
 const BRACKET_ADVANCE=[
-  {from:73,to:90,slot:'h'},{from:76,to:90,slot:'a'},
-  {from:74,to:89,slot:'h'},{from:75,to:89,slot:'a'},
-  {from:78,to:91,slot:'h'},{from:77,to:91,slot:'a'},
+  {from:73,to:90,slot:'h'},{from:75,to:90,slot:'a'},
+  {from:74,to:89,slot:'h'},{from:77,to:89,slot:'a'},
+  {from:76,to:91,slot:'h'},{from:78,to:91,slot:'a'},
   {from:79,to:92,slot:'h'},{from:80,to:92,slot:'a'},
-  {from:82,to:93,slot:'h'},{from:81,to:93,slot:'a'},
-  {from:84,to:94,slot:'h'},{from:83,to:94,slot:'a'},
-  {from:85,to:95,slot:'h'},{from:88,to:95,slot:'a'},
-  {from:86,to:96,slot:'h'},{from:87,to:96,slot:'a'},
-  {from:90,to:97,slot:'h'},{from:89,to:97,slot:'a'},
-  {from:91,to:98,slot:'h'},{from:92,to:98,slot:'a'},
-  {from:93,to:99,slot:'h'},{from:94,to:99,slot:'a'},
+  {from:83,to:93,slot:'h'},{from:84,to:93,slot:'a'},
+  {from:81,to:94,slot:'h'},{from:82,to:94,slot:'a'},
+  {from:86,to:95,slot:'h'},{from:88,to:95,slot:'a'},
+  {from:85,to:96,slot:'h'},{from:87,to:96,slot:'a'},
+  {from:89,to:97,slot:'h'},{from:90,to:97,slot:'a'},
+  {from:93,to:98,slot:'h'},{from:94,to:98,slot:'a'},
+  {from:91,to:99,slot:'h'},{from:92,to:99,slot:'a'},
   {from:95,to:100,slot:'h'},{from:96,to:100,slot:'a'},
   {from:97,to:101,slot:'h'},{from:98,to:101,slot:'a'},
   {from:99,to:102,slot:'h'},{from:100,to:102,slot:'a'},
@@ -410,9 +415,15 @@ function advanceBracket(){
   let changed=false;
   BRACKET_ADVANCE.forEach(rule=>{
     const src=M.find(m=>m.id===rule.from);
-    if(!src||!played(src)||src.hr===src.ar) return;
-    const winner=src.hr>src.ar?src.h:src.a;
-    const loser=src.hr>src.ar?src.a:src.h;
+    if(!src||!played(src)) return;
+    // src.win lo llena fetchLive con el "winner" real de ESPN, que ya
+    // resuelve empates definidos en penales. Si no esta disponible (dato
+    // cargado a mano) se usa el marcador; un empate sin src.win significa
+    // que el cruce se fue a penales y todavia no sabemos quien gano.
+    let winSlot=src.win || (src.hr>src.ar?'h':src.ar>src.hr?'a':null);
+    if(!winSlot) return;
+    const winner=winSlot==='h'?src.h:src.a;
+    const loser=winSlot==='h'?src.a:src.h;
     const target=M.find(m=>m.id===rule.to);
     if(target&&target[rule.slot]!==winner){target[rule.slot]=winner;changed=true;}
     if(rule.loserTo){
@@ -426,24 +437,51 @@ function advanceBracket(){
 // ===== PERSISTENCIA: guarda en el navegador los resultados que ya se
 // confirmaron via ESPN, para que no se pierdan al recargar la pagina =====
 const RESULTS_KEY='wc2026_results_v1';
+function applyResults(stored){
+  let changed=false;
+  M.forEach(x=>{
+    const s=stored[x.id];
+    if(s&&s.hr!=null&&s.ar!=null&&(x.hr!==s.hr||x.ar!==s.ar||x.win!==s.win)){
+      x.hr=s.hr;x.ar=s.ar;
+      if(s.win!=null)x.win=s.win;
+      if(s.hp!=null)x.hp=s.hp;
+      if(s.ap!=null)x.ap=s.ap;
+      changed=true;
+    }
+  });
+  return changed;
+}
 function loadStoredResults(){
   try{
     const raw=localStorage.getItem(RESULTS_KEY);
     if(!raw)return;
-    const stored=JSON.parse(raw);
-    M.forEach(x=>{
-      const s=stored[x.id];
-      if(s&&s.hr!=null&&s.ar!=null){x.hr=s.hr;x.ar=s.ar;}
-    });
+    applyResults(JSON.parse(raw));
   }catch(e){}
 }
 function saveStoredResult(x){
   try{
     const raw=localStorage.getItem(RESULTS_KEY);
     const stored=raw?JSON.parse(raw):{};
-    stored[x.id]={hr:x.hr,ar:x.ar};
+    stored[x.id]={hr:x.hr,ar:x.ar,win:x.win??null,hp:x.hp??null,ap:x.ap??null};
     localStorage.setItem(RESULTS_KEY,JSON.stringify(stored));
   }catch(e){}
+}
+
+// ===== RESULTADOS COMPARTIDOS: un workflow de GitHub Actions consulta ESPN
+// periodicamente y publica data/results.json, para que todas las personas
+// que visitan la app vean los mismos resultados (no solo quien lo vio en
+// vivo en su propio navegador) =====
+const SHARED_RESULTS_URL='https://sagastumejosue71-oss.github.io/mundial_2026_JS/data/results.json';
+async function loadSharedResults(){
+  try{
+    const res=await fetch(`${SHARED_RESULTS_URL}?t=${Date.now()}`,{cache:'no-store'});
+    if(!res.ok)return false;
+    const stored=await res.json();
+    return applyResults(stored);
+  }catch(e){
+    console.warn('No se pudo cargar data/results.json compartido:',e);
+    return false;
+  }
 }
 function historyItem(x){
   const score=`${x.hr ?? 0} - ${x.ar ?? 0}`;
@@ -471,7 +509,7 @@ function card(x, alarm=false){
         <span class="sc-num">${x.hr}</span>
         <span class="sc-dash">-</span>
         <span class="sc-num">${x.ar}</span>
-       </div><div style="font-size:11px;color:#8b949e;margin-top:2px">Final</div>`
+       </div><div style="font-size:11px;color:#8b949e;margin-top:2px">Final${x.hr===x.ar&&x.hp!=null&&x.ap!=null?` · Penales ${x.hp}-${x.ap}`:''}</div>`
     :meta.score
       ?`<div style="display:flex;align-items:center;justify-content:center;gap:4px">
           <span class="sc-num">${meta.score.home}</span>
@@ -621,12 +659,13 @@ function renderLlaves(){
       const as_=played(x)?x.ar:(liveScore!=null?liveScore.away:null);
       const showScore=hs!==null&&as_!==null;
 
-      const hw=showScore&&hs>as_;
-      const aw=showScore&&as_>hs;
+      const hw=showScore&&(x.win?x.win==='h':hs>as_);
+      const aw=showScore&&(x.win?x.win==='a':as_>hs);
+      const penNote=showScore&&hs===as_&&x.hp!=null&&x.ap!=null?` · Penales ${x.hp}-${x.ap}`:'';
 
       let statusBadge='';
       if(isLive) statusBadge=`<span style="color:var(--red);font-weight:700;margin-left:8px;font-size:10px">● ${liveMinute}</span>`;
-      else if(isFinished) statusBadge=`<span style="color:var(--green);margin-left:8px;font-size:10px">✓ Final</span>`;
+      else if(isFinished) statusBadge=`<span style="color:var(--green);margin-left:8px;font-size:10px">✓ Final${penNote}</span>`;
 
       h+=`<div class="bm${isLive?' is-live':''}" onclick="openLiveView(${x.id})" style="${isLive?'border-color:var(--red)':''}">
         <div class="bt${hw?' win':''}">
@@ -774,7 +813,7 @@ function renderLiveView(){
   const movement=meta.latestAction || meta.summary || '';
   const score=meta.score ? `${meta.score.home} - ${meta.score.away}` : (played(x) ? `${x.hr} - ${x.ar}` : `${gtT(x.time)} GT`);
   const minute=meta.minute || (detail.minute ? detail.minute : 'Por comenzar');
-  const events=(detail.events||[]).slice(0,12);
+  const events=(detail.events||[]).slice(-12);
   if(minute==='Entretiempo' && !events.some(ev=>/entretiempo|descanso|halftime/i.test(ev.text))){
     events.unshift({minute:'45+',text:'Entretiempo: el partido entra en descanso.',type:'halftime'});
   }
@@ -846,11 +885,23 @@ async function fetchLive(){
   if(busy)return; busy=true;
   const dot=document.getElementById('dot'),lbt=document.getElementById('liveT');
   dot.className='live-dot spinning'; lbt.textContent='Actualizando...';
+  const sharedChanged=await loadSharedResults();
+  if(sharedChanged) advanceBracket();
+
   const today=new Date().toISOString().slice(0,10);
   // Incluye partidos pasados sin resultado: si ESPN no se consultó a tiempo
   // el día del partido, seguimos intentando hasta obtener el resultado real.
   const pending=M.filter(x=>x.date<=today&&!played(x));
-  if(!pending.length){dot.className='live-dot pulse';lbt.textContent='EN VIVO';busy=false;return;}
+  if(!pending.length){
+    if(sharedChanged){
+      if(curTab==='hoy')renderHoy();
+      else if(curTab==='partidos')renderPartidos();
+      else if(curTab==='llaves')renderLlaves();
+      else if(curTab==='live')renderLiveView();
+      else if(curTab==='stats')renderStats();
+    }
+    dot.className='live-dot pulse';lbt.textContent='EN VIVO';busy=false;return;
+  }
 
   try{
     const dates=[...new Set(pending.map(x=>x.date))];
@@ -864,7 +915,7 @@ async function fetchLive(){
     }
     window.__espnLiveEvents=allEvents;
 
-    let changed=false;
+    let changed=sharedChanged;
     pending.forEach(x=>{
       const match=findEspnMatch(x.h,x.a);
       let msg='';
@@ -906,9 +957,16 @@ async function fetchLive(){
         } else if(state==='post'){
           if(homeScore!==null&&awayScore!==null){
             x.hr=Number(homeScore); x.ar=Number(awayScore);
+            // En cruces de eliminacion directa empatados, ESPN define el
+            // ganador real (tras penales) con "winner" y trae el marcador
+            // de la tanda en "shootoutScore" por equipo.
+            x.win = homeTeam?.winner===true ? 'h' : (awayTeam?.winner===true ? 'a' : null);
+            x.hp = homeTeam?.shootoutScore!=null ? Number(homeTeam.shootoutScore) : null;
+            x.ap = awayTeam?.shootoutScore!=null ? Number(awayTeam.shootoutScore) : null;
             saveStoredResult(x);
             ensureHistoryEntry(x);
-            msg=`🏁 Final: ${x.h} ${homeScore}-${awayScore} ${x.a}`;
+            const penTxt = x.hr===x.ar && x.hp!=null && x.ap!=null ? ` (pen. ${x.hp}-${x.ap})` : '';
+            msg=`🏁 Final: ${x.h} ${homeScore}-${awayScore} ${x.a}${penTxt}`;
             minute='Final';
             summary=detail || 'Partido completado';
             latestAction=detail || 'Partido completado';
@@ -935,6 +993,14 @@ async function fetchLive(){
     });
 
     if(advanceBracket())changed=true;
+
+    // La linea de tiempo (jugada a jugada) solo se cargaba una vez al abrir
+    // la vista en vivo; aqui se refresca junto con el resto de datos en vivo
+    // mientras el partido abierto siga en curso.
+    if(curTab==='live' && selectedMatchId){
+      const liveMatch=M.find(m=>m.id===selectedMatchId);
+      if(liveMatch && pending.includes(liveMatch)) await loadMatchDetail(selectedMatchId);
+    }
 
     const now=new Date().toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('lastUpd').textContent=`Actualizado ${now}`;
@@ -967,11 +1033,20 @@ function goTab(id,el){
 }
 
 // ===== BOOT =====
+function refreshDerived(){
+  historyMatches=M.filter(x=>played(x)).map(x=>({...x}));
+  historyMatches.sort((a,b)=>compareMatchDate(b,a));
+  renderHoy(); renderPartidos(); renderLlaves(); renderStats(); renderLiveView();
+}
 loadStoredResults();
 advanceBracket();
-historyMatches=M.filter(x=>played(x)).map(x=>({...x}));
-historyMatches.sort((a,b)=>compareMatchDate(b,a));
-renderHoy(); renderPartidos(); renderLlaves(); renderStats(); renderLiveView();
+refreshDerived();
+
+// El resultado compartido (data/results.json, publicado por un workflow de
+// GitHub Actions) llega por red: no bloquea el primer render, pero en cuanto
+// llega se vuelve a pintar para que todas las visitas queden igual de al dia.
+loadSharedResults().then(changed=>{ if(changed){ advanceBracket(); refreshDerived(); } });
+
 setTimeout(fetchLive,1500);
 setInterval(fetchLive, 30000);
 </script>
