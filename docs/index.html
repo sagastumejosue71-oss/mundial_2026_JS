@@ -211,6 +211,10 @@ const TEAM_ALIASES={
   'Francia':'France','Senegal':'Senegal','Iraq':'Iraq','Noruega':'Norway','Argentina':'Argentina','Argelia':'Algeria','Austria':'Austria','Jordania':'Jordan','Portugal':'Portugal',
   'RD Congo':'Congo DR','Uzbekistán':'Uzbekistan','Colombia':'Colombia','Inglaterra':'England','Croacia':'Croatia','Ghana':'Ghana','Panamá':'Panama'
 };
+// ESPN devuelve nombres de equipo en ingles (team.displayName); esto los
+// vuelve al nombre en español que usa el resto de la app.
+const TEAM_ALIASES_REV=Object.fromEntries(Object.entries(TEAM_ALIASES).map(([es,en])=>[en,es]));
+function toSpanishTeam(name){return TEAM_ALIASES_REV[name]||name;}
 const LIVE_EVENTS={
   74:["⚽ Min 12' - Alemania se pone al frente con un disparo potente.","⚽ Min 24' - Paraguay empata tras un contragolpe muy peligroso.","⚠️ Min 40' - El partido está muy parejo y ambos equipos buscan el liderazgo."],
   75:["⚽ Min 8' - Países Bajos adelanta con una combinación rápida.","⚽ Min 26' - Marruecos iguala y eleva la intensidad.","⚠️ Min 41' - Se siente el ritmo de eliminatoria en cada jugada."],
@@ -762,6 +766,19 @@ function translateEventText(text){
   const t=(text||'').trim();
   if(!t) return '';
   return t
+    .replace(/\bis shown the yellow card\b/gi,'recibe la tarjeta amarilla')
+    .replace(/\bis shown the red card\b/gi,'recibe la tarjeta roja')
+    .replace(/\bfor a bad foul\b/gi,'por una falta dura')
+    .replace(/\breplaces\b/gi,'reemplaza a')
+    .replace(/\bbecause of an injury\b/gi,'por una lesión')
+    .replace(/\bDelay in match\b/gi,'Pausa en el partido')
+    .replace(/\bDelay over\.? They are ready to continue\.?\b/gi,'Se reanuda el juego.')
+    .replace(/\bconverts the penalty with a\b/gi,'convierte el penal con un')
+    .replace(/\bright footed shot\b/gi,'disparo de derecha')
+    .replace(/\bleft footed shot\b/gi,'disparo de izquierda')
+    .replace(/\bfrom the centre of the box\b/gi,'desde el centro del área')
+    .replace(/\bto the centre of the goal\b/gi,'al centro del arco')
+    .replace(/\bAssisted by\b/gi,'Asistencia de')
     .replace(/\bYellow card\b/gi,'Tarjeta amarilla')
     .replace(/\bRed card\b/gi,'Tarjeta roja')
     .replace(/\bGoal\b/gi,'Gol')
@@ -779,13 +796,62 @@ function translateEventText(text){
     .replace(/\bInjury time\b/gi,'Tiempo añadido')
     .replace(/\bShot\b/gi,'Disparo');
 }
-function getLiveEventClass(text){
-  const t=(text||'').toLowerCase();
-  if(/yellow|tarjeta/i.test(t)) return {icon:'🟨', label:'Tarjeta', color:'var(--gold)'};
-  if(/falta|free kick|tiro libre|penal/i.test(t)) return {icon:'⚠️', label:'Falta', color:'var(--red)'};
-  if(/gol|score|scored/i.test(t)) return {icon:'⚽', label:'Gol', color:'var(--green)'};
-  if(/cambio|substitution|substitute|change/i.test(t)) return {icon:'🔄', label:'Cambio', color:'#4f46e5'};
-  return {icon:'🔹', label:'Jugada', color:'var(--text2)'};
+// Construye una descripcion especifica y con emocion para cada jugada,
+// usando los campos estructurados que manda ESPN (tipo de jugada, equipo y
+// jugadores involucrados) en vez de traducir a lo bruto el texto en ingles.
+function describeEvent(ev){
+  const slug=ev.slug||'';
+  const team=ev.team||'';
+  const [p1,p2]=ev.participants||[];
+  const raw=ev.text||'';
+
+  if(slug==='kickoff') return {label:'Arranca',color:'var(--green)',text:'🟢 ¡Rueda el balón! Arranca el partido.'};
+  if(slug==='start-2nd-half') return {label:'2do tiempo',color:'var(--green)',text:'🟢 ¡Arranca el segundo tiempo!'};
+  if(slug==='start-extra-time') return {label:'Prórroga',color:'var(--gold)',text:'⏱️ ¡A la prórroga! Se juegan 30 minutos más para definir todo.'};
+  if(slug==='start-2nd-half-extra-time') return {label:'Prórroga',color:'var(--gold)',text:'⏱️ Arranca el segundo tiempo de la prórroga.'};
+  if(slug==='start-shootout') return {label:'Penales',color:'var(--red)',text:'🎯 ¡Se define en la tanda de penales!'};
+  if(slug==='halftime') return {label:'Entretiempo',color:'var(--text2)',text:'⏸️ Entretiempo: los equipos se van al vestuario.'};
+  if(slug==='halftime-extra-time') return {label:'Descanso',color:'var(--text2)',text:'⏸️ Breve descanso antes del segundo tiempo de la prórroga.'};
+  if(slug==='end-regular-time') return {label:'Fin del tiempo',color:'var(--text2)',text:'⌛ Termina el tiempo reglamentario.'};
+  if(slug==='end-extra-time') return {label:'Fin prórroga',color:'var(--text2)',text:'⌛ Termina la prórroga.'};
+  if(slug==='end-match') return {label:'Final',color:'var(--green)',text:'🏁 ¡Terminó el partido!'};
+  if(slug==='start-delay'||slug==='end-delay'){
+    if(slug==='end-delay') return {label:'Se reanuda',color:'var(--text2)',text:'▶️ Se reanuda el partido.'};
+    if(/drinks/i.test(raw)) return {label:'Pausa',color:'var(--text2)',text:'💧 Pausa para hidratación.'};
+    if(/injury/i.test(raw)) return {label:'Pausa',color:'var(--text2)',text:`🚑 Se detiene el juego por una atención médica${team?` a ${team}`:''}.`};
+    return {label:'Pausa',color:'var(--text2)',text:'⏱️ Breve interrupción en el partido.'};
+  }
+  if(slug==='substitution'){
+    return {label:'Cambio',color:'#4f46e5',text:`🔄 Cambio en ${team||'el equipo'}: entra ${p1||'un jugador'}, sale ${p2||'otro jugador'}.`};
+  }
+  if(slug==='yellow-card'){
+    return {label:'Amarilla',color:'var(--gold)',text:`🟨 Tarjeta amarilla para ${p1||'un jugador'} de ${team||'el equipo'}.`};
+  }
+  if(slug==='red-card'||slug==='yellow-red-card'){
+    return {label:'Expulsión',color:'var(--red)',text:`🟥 ¡Se va expulsado! ${p1||'El jugador'} deja a ${team||'su equipo'} con uno menos.`};
+  }
+  if(slug==='own-goal'){
+    return {label:'Autogol',color:'var(--red)',text:`😱 ¡Autogol! ${p1||'Un defensor'} de ${team||'el equipo'} manda el balón a su propia portería.`};
+  }
+  if(slug.startsWith('penalty')){
+    if(/saved|missed|off target|hits the (post|bar)/i.test(raw)) return {label:'Penal fallado',color:'var(--red)',text:`🙅 ¡Lo ataja el arquero! ${p1||'El cobrador'} de ${team||'el equipo'} falla desde los once pasos.`};
+    if(slug.includes('scored')||ev.scoringPlay){
+      const assist=p2?` Asistencia de ${p2}.`:'';
+      return {label:'Gol de penal',color:'var(--green)',text:`🥅 ¡GOL DE PENAL! ${p1||'El cobrador'} no perdona y anota para ${team||'su equipo'}.${assist}`};
+    }
+    return {label:'Penal',color:'var(--gold)',text:`⚠️ ¡Hay penal! Lo cobra ${team||'el equipo'}.`};
+  }
+  if(/disallow/i.test(raw)||slug.includes('disallow')){
+    return {label:'Gol anulado',color:'var(--red)',text:`🚫 ¡Gol anulado! El VAR le apaga la fiesta a ${team||'el equipo'}.`};
+  }
+  if(slug==='offside'||/^offside/i.test(raw)){
+    return {label:'Fuera de juego',color:'var(--text2)',text:`🚩 Fuera de juego de ${team||'el equipo'}.`};
+  }
+  if(slug.startsWith('goal')||ev.scoringPlay){
+    const assist=p2?` Asistencia de ${p2}.`:'';
+    return {label:'¡GOL!',color:'var(--green)',text:`⚽ ¡GOOOOL DE ${(team||'').toUpperCase()||'ESTE EQUIPO'}! Lo grita ${p1||'todo el estadio'}.${assist}`};
+  }
+  return {label:'Jugada',color:'var(--text2)',text:translateEventText(raw)||'Jugada del partido.'};
 }
 function parseEventMinute(minute){
   if(!minute) return Number.MAX_SAFE_INTEGER;
@@ -814,8 +880,8 @@ function renderLiveView(){
   const score=meta.score ? `${meta.score.home} - ${meta.score.away}` : (played(x) ? `${x.hr} - ${x.ar}` : `${gtT(x.time)} GT`);
   const minute=meta.minute || (detail.minute ? detail.minute : 'Por comenzar');
   const events=(detail.events||[]).slice(-12);
-  if(minute==='Entretiempo' && !events.some(ev=>/entretiempo|descanso|halftime/i.test(ev.text))){
-    events.unshift({minute:'45+',text:'Entretiempo: el partido entra en descanso.',type:'halftime'});
+  if(minute==='Entretiempo' && !events.some(ev=>ev.slug==='halftime')){
+    events.unshift({minute:'45+',slug:'halftime',team:'',participants:[],text:''});
   }
   host.innerHTML=`
     <div class="ibox ig"><h3 style="color:var(--green)"><i class="bi bi-broadcast"></i> Vista en vivo</h3><p>Resumen del encuentro con minutos, tarjetas, faltas y jugadas clave.</p></div>
@@ -836,16 +902,15 @@ function renderLiveView(){
         </div>
         <div class="sec-ttl">Línea de tiempo del partido</div>
         ${events.length ? `<div class="timeline">${events.map(ev=>{
-          const text=translateEventText(ev.text);
-          const cls=getLiveEventClass(text);
+          const d=describeEvent(ev);
           return `<div class="timeline-item">
             <div class="timeline-head">
               <span class="timeline-min">${ev.minute || '—'}</span>
-              <span style="font-size:11px;font-weight:700;color:${cls.color}">${cls.label}</span>
+              <span style="font-size:11px;font-weight:700;color:${d.color}">${d.label}</span>
             </div>
             <div class="timeline-card">
-              <div class="timeline-type">${cls.label}</div>
-              <div class="timeline-text">${text}</div>
+              <div class="timeline-type">${d.label}</div>
+              <div class="timeline-text">${d.text}</div>
             </div>
           </div>`;
         }).join('')}</div>` : `<div class="empty" style="padding:14px 0">Aún no hay eventos detallados para este encuentro.</div>`}
@@ -863,11 +928,30 @@ async function loadMatchDetail(id){
     if(!response.ok) throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
     const rawEvents=data.keyEvents||[];
-    const events=rawEvents.map(ev=>({
-      minute: ev.clock?.displayValue || (ev.clock?.value ? `${ev.clock.value}'` : ''),
-      text: ev.play?.text || ev.text || ev.type?.text || '',
-      type: ev.play?.type?.text || ev.type?.text || ''
-    })).filter(ev=>ev.text).sort((a,b)=>parseEventMinute(a.minute)-parseEventMinute(b.minute));
+    // ESPN manda por duplicado los eventos de estado del partido (uno por
+    // equipo, ej. las pausas de hidratacion) sin texto en uno de los dos;
+    // esos se combinan en uno solo. Los eventos con jugadores (goles,
+    // cambios, tarjetas) nunca se combinan porque puede haber varios en el
+    // mismo minuto (ej. 3 cambios seguidos).
+    const MATCH_STATE_SLUGS=new Set(['kickoff','start-2nd-half','start-extra-time','start-2nd-half-extra-time','end-extra-time','end-regular-time','end-match','halftime','halftime-extra-time','start-shootout','start-delay','end-delay']);
+    const seen=new Map();
+    rawEvents.forEach(ev=>{
+      const minute=ev.clock?.displayValue || (ev.clock?.value!=null ? `${ev.clock.value}'` : '');
+      const slug=ev.type?.type || '';
+      if(!slug) return;
+      const entry={
+        minute,
+        slug,
+        team: toSpanishTeam(ev.team?.displayName||''),
+        scoringPlay: !!ev.scoringPlay,
+        participants: (ev.participants||[]).map(p=>p.athlete?.displayName).filter(Boolean),
+        text: ev.text || ev.shortText || ''
+      };
+      const key=MATCH_STATE_SLUGS.has(slug) ? `${slug}|${minute}` : `id:${ev.id}`;
+      const prev=seen.get(key);
+      if(!prev || (!prev.text && entry.text)) seen.set(key, entry);
+    });
+    const events=[...seen.values()].sort((a,b)=>parseEventMinute(a.minute)-parseEventMinute(b.minute));
     liveDetails[id]={
       minute: fmtClock(match.competitions?.[0]?.status || {}),
       events
