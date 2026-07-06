@@ -861,6 +861,19 @@ function parseEventMinute(minute){
   return Number(match[1]);
 }
 
+// ===== PERSISTENCIA DE VISTA: recuerda la pestaña y el partido en vivo
+// abierto para que un refresh de la pagina no te regrese a "Hoy" =====
+const VIEW_KEY='wc2026_view_v1';
+function saveViewState(){
+  try{ localStorage.setItem(VIEW_KEY, JSON.stringify({tab:curTab, matchId:selectedMatchId})); }catch(e){}
+}
+function loadViewState(){
+  try{
+    const raw=localStorage.getItem(VIEW_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+
 function openLiveView(id){
   const x=M.find(m=>m.id===id); if(!x)return;
   selectedMatchId=id;
@@ -879,9 +892,12 @@ function renderLiveView(){
   const movement=meta.latestAction || meta.summary || '';
   const score=meta.score ? `${meta.score.home} - ${meta.score.away}` : (played(x) ? `${x.hr} - ${x.ar}` : `${gtT(x.time)} GT`);
   const minute=meta.minute || (detail.minute ? detail.minute : 'Por comenzar');
-  const events=(detail.events||[]).slice(-12);
+  // Cronologia completa del partido, de principio (minuto 0) a fin, de
+  // arriba hacia abajo. No se recorta: se muestran todos los eventos.
+  const events=[...(detail.events||[])];
   if(minute==='Entretiempo' && !events.some(ev=>ev.slug==='halftime')){
-    events.unshift({minute:'45+',slug:'halftime',team:'',participants:[],text:''});
+    events.push({minute:'45+',slug:'halftime',team:'',participants:[],text:''});
+    events.sort((a,b)=>parseEventMinute(a.minute)-parseEventMinute(b.minute));
   }
   host.innerHTML=`
     <div class="ibox ig"><h3 style="color:var(--green)"><i class="bi bi-broadcast"></i> Vista en vivo</h3><p>Resumen del encuentro con minutos, tarjetas, faltas y jugadas clave.</p></div>
@@ -894,12 +910,6 @@ function renderLiveView(){
           <div class="team">${flagImg(x.a)}<div class="tname">${x.a}</div></div>
         </div>
         <div class="venue"><i class="bi bi-geo-alt"></i> ${x.venue}</div>
-        <div class="live-box" style="margin-bottom:10px">
-          <div class="live-box-lbl"><i class="bi bi-chat-square-text-fill"></i> Última actualización</div>
-          <div class="live-box-txt">${lv || 'El partido aún no tiene reportes en vivo. Se mostrará la información cuando ESPN la entregue.'}</div>
-          ${meta.summary?`<div class="live-box-txt" style="margin-top:6px;font-size:12px;color:var(--text2)">${meta.summary}</div>`:''}
-          ${movement?`<div class="live-box-txt" style="margin-top:6px;font-size:12px;color:var(--gold)">Último movimiento: ${movement}</div>`:''}
-        </div>
         <div class="sec-ttl">Línea de tiempo del partido</div>
         ${events.length ? `<div class="timeline">${events.map(ev=>{
           const d=describeEvent(ev);
@@ -914,6 +924,12 @@ function renderLiveView(){
             </div>
           </div>`;
         }).join('')}</div>` : `<div class="empty" style="padding:14px 0">Aún no hay eventos detallados para este encuentro.</div>`}
+        <div class="live-box" style="margin-top:12px">
+          <div class="live-box-lbl"><i class="bi bi-chat-square-text-fill"></i> Última actualización</div>
+          <div class="live-box-txt">${lv || 'El partido aún no tiene reportes en vivo. Se mostrará la información cuando ESPN la entregue.'}</div>
+          ${meta.summary?`<div class="live-box-txt" style="margin-top:6px;font-size:12px;color:var(--text2)">${meta.summary}</div>`:''}
+          ${movement?`<div class="live-box-txt" style="margin-top:6px;font-size:12px;color:var(--gold)">Último movimiento: ${movement}</div>`:''}
+        </div>
       </div>
     </div>`;
 }
@@ -1104,11 +1120,13 @@ async function fetchLive(){
 
 // ===== TAB =====
 function goTab(id,el){
+  el = el || document.querySelector(`.app-tab[data-tab="${id}"]`);
   document.querySelectorAll('.app-tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
-  el.classList.add('active');
+  if(el) el.classList.add('active');
   document.getElementById(id).classList.add('active');
   curTab=id;
+  saveViewState();
   if(id==='hoy')renderHoy();
   else if(id==='partidos')renderPartidos();
   else if(id==='llaves')renderLlaves();
@@ -1122,6 +1140,20 @@ function refreshDerived(){
   historyMatches.sort((a,b)=>compareMatchDate(b,a));
   renderHoy(); renderPartidos(); renderLlaves(); renderStats(); renderLiveView();
 }
+// Restaura la pestaña (y el partido en vivo, si habia uno abierto) desde
+// antes de recargar la pagina, en vez de arrancar siempre en "Hoy".
+const savedView=loadViewState();
+if(savedView && savedView.tab && document.getElementById(savedView.tab)){
+  curTab=savedView.tab;
+  if(savedView.matchId!=null && M.some(m=>m.id===savedView.matchId)) selectedMatchId=savedView.matchId;
+  const savedBtn=document.querySelector(`.app-tab[data-tab="${curTab}"]`);
+  document.querySelectorAll('.app-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
+  if(savedBtn) savedBtn.classList.add('active');
+  document.getElementById(curTab).classList.add('active');
+  if(curTab==='live' && selectedMatchId!=null) loadMatchDetail(selectedMatchId);
+}
+
 loadStoredResults();
 advanceBracket();
 refreshDerived();
