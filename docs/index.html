@@ -383,6 +383,68 @@ function ensureHistoryEntry(match){
   historyMatches.push({...match});
   historyMatches.sort((a,b)=>compareMatchDate(b,a));
 }
+
+// ===== BRACKET: arma automaticamente los cruces de eliminacion directa =====
+// Cada regla dice: el ganador del partido "from" pasa al slot "slot" (h/a) del
+// partido "to". Para semifinales ademas se define a donde va el perdedor
+// (3er lugar), ya que ese cruce sale de los dos perdedores de semis.
+const BRACKET_ADVANCE=[
+  {from:73,to:90,slot:'h'},{from:76,to:90,slot:'a'},
+  {from:74,to:89,slot:'h'},{from:75,to:89,slot:'a'},
+  {from:78,to:91,slot:'h'},{from:77,to:91,slot:'a'},
+  {from:79,to:92,slot:'h'},{from:80,to:92,slot:'a'},
+  {from:82,to:93,slot:'h'},{from:81,to:93,slot:'a'},
+  {from:84,to:94,slot:'h'},{from:83,to:94,slot:'a'},
+  {from:85,to:95,slot:'h'},{from:88,to:95,slot:'a'},
+  {from:86,to:96,slot:'h'},{from:87,to:96,slot:'a'},
+  {from:90,to:97,slot:'h'},{from:89,to:97,slot:'a'},
+  {from:91,to:98,slot:'h'},{from:92,to:98,slot:'a'},
+  {from:93,to:99,slot:'h'},{from:94,to:99,slot:'a'},
+  {from:95,to:100,slot:'h'},{from:96,to:100,slot:'a'},
+  {from:97,to:101,slot:'h'},{from:98,to:101,slot:'a'},
+  {from:99,to:102,slot:'h'},{from:100,to:102,slot:'a'},
+  {from:101,to:104,slot:'h',loserTo:103,loserSlot:'h'},
+  {from:102,to:104,slot:'a',loserTo:103,loserSlot:'a'},
+];
+function advanceBracket(){
+  let changed=false;
+  BRACKET_ADVANCE.forEach(rule=>{
+    const src=M.find(m=>m.id===rule.from);
+    if(!src||!played(src)||src.hr===src.ar) return;
+    const winner=src.hr>src.ar?src.h:src.a;
+    const loser=src.hr>src.ar?src.a:src.h;
+    const target=M.find(m=>m.id===rule.to);
+    if(target&&target[rule.slot]!==winner){target[rule.slot]=winner;changed=true;}
+    if(rule.loserTo){
+      const loserTarget=M.find(m=>m.id===rule.loserTo);
+      if(loserTarget&&loserTarget[rule.loserSlot]!==loser){loserTarget[rule.loserSlot]=loser;changed=true;}
+    }
+  });
+  return changed;
+}
+
+// ===== PERSISTENCIA: guarda en el navegador los resultados que ya se
+// confirmaron via ESPN, para que no se pierdan al recargar la pagina =====
+const RESULTS_KEY='wc2026_results_v1';
+function loadStoredResults(){
+  try{
+    const raw=localStorage.getItem(RESULTS_KEY);
+    if(!raw)return;
+    const stored=JSON.parse(raw);
+    M.forEach(x=>{
+      const s=stored[x.id];
+      if(s&&s.hr!=null&&s.ar!=null){x.hr=s.hr;x.ar=s.ar;}
+    });
+  }catch(e){}
+}
+function saveStoredResult(x){
+  try{
+    const raw=localStorage.getItem(RESULTS_KEY);
+    const stored=raw?JSON.parse(raw):{};
+    stored[x.id]={hr:x.hr,ar:x.ar};
+    localStorage.setItem(RESULTS_KEY,JSON.stringify(stored));
+  }catch(e){}
+}
 function historyItem(x){
   const score=`${x.hr ?? 0} - ${x.ar ?? 0}`;
   return `<div class="history-item">
@@ -844,6 +906,7 @@ async function fetchLive(){
         } else if(state==='post'){
           if(homeScore!==null&&awayScore!==null){
             x.hr=Number(homeScore); x.ar=Number(awayScore);
+            saveStoredResult(x);
             ensureHistoryEntry(x);
             msg=`🏁 Final: ${x.h} ${homeScore}-${awayScore} ${x.a}`;
             minute='Final';
@@ -870,6 +933,8 @@ async function fetchLive(){
         changed=true;
       }
     });
+
+    if(advanceBracket())changed=true;
 
     const now=new Date().toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('lastUpd').textContent=`Actualizado ${now}`;
@@ -902,6 +967,8 @@ function goTab(id,el){
 }
 
 // ===== BOOT =====
+loadStoredResults();
+advanceBracket();
 historyMatches=M.filter(x=>played(x)).map(x=>({...x}));
 historyMatches.sort((a,b)=>compareMatchDate(b,a));
 renderHoy(); renderPartidos(); renderLlaves(); renderStats(); renderLiveView();
