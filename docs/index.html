@@ -202,6 +202,17 @@ const TEAM_ALIASES={
 // vuelve al nombre en español que usa el resto de la app.
 const TEAM_ALIASES_REV=Object.fromEntries(Object.entries(TEAM_ALIASES).map(([es,en])=>[en,es]));
 function toSpanishTeam(name){return TEAM_ALIASES_REV[name]||name;}
+// Reemplazo simple de nombres de equipo en texto libre en ingles (ej. notas
+// del VAR: "VAR Decision: No Goal Portugal 2-1 Croatia") por el nombre en
+// español que usa el resto de la app.
+function toSpanishText(text){
+  let out=text||'';
+  Object.entries(TEAM_ALIASES_REV).forEach(([en,es])=>{
+    if(en===es) return;
+    out=out.split(en).join(es);
+  });
+  return out;
+}
 const LIVE_EVENTS={
   74:["⚽ Min 12' - Alemania se pone al frente con un disparo potente.","⚽ Min 24' - Paraguay empata tras un contragolpe muy peligroso.","⚠️ Min 40' - El partido está muy parejo y ambos equipos buscan el liderazgo."],
   75:["⚽ Min 8' - Países Bajos adelanta con una combinación rápida.","⚽ Min 26' - Marruecos iguala y eleva la intensidad.","⚠️ Min 41' - Se siente el ritmo de eliminatoria en cada jugada."],
@@ -496,7 +507,10 @@ function historyItem(x){
 function card(x, alarm=false){
   const today=new Date().toISOString().slice(0,10);
   const p=played(x), lv=liveData[x.id], meta=liveMeta[x.id]||{}, isToday=x.date===today;
-  const isLiveNow=lv&&/(en curso|min\s*\d|'|\bvs\b.*en\s+juego)/i.test(lv);
+  // "&#39;" es el apostrofe del reloj (ej. "90'+4'") ya escapado por
+  // escapeHtml antes de guardarse en liveData; sin esta alternativa la
+  // insignia "EN VIVO" dejaba de encenderse durante un partido en curso.
+  const isLiveNow=lv&&/(en curso|min\s*\d|'|&#39;|\bvs\b.*en\s+juego)/i.test(lv);
   const pr=pred(x);
   const pill=STAGE_PILL[x.stage]||'sp-g';
   const sn=STAGE_NAME[x.stage]+(x.group?` · Gr.${x.group}`:'');
@@ -794,11 +808,47 @@ function describeEvent(ev){
     }
     return {label:'Penal',color:'var(--gold)',text:`⚠️ ¡Hay penal! Lo cobra ${team||'el equipo'}.`};
   }
-  if(/disallow/i.test(raw)||slug.includes('disallow')){
-    return {label:'Gol anulado',color:'var(--red)',text:`🚫 ¡Gol anulado! El VAR le apaga la fiesta a ${team||'el equipo'}.`};
+  if(slug==='deleted-after-review'){
+    return {label:'Gol anulado',color:'var(--red)',text:`🚫 ¡GOL ANULADO! El VAR le apaga la fiesta a ${team||'el equipo'}: la anotación de ${p1||'el jugador'} no vale.`};
   }
-  if(slug==='offside'||/^offside/i.test(raw)){
-    return {label:'Fuera de juego',color:'var(--text2)',text:`🚩 Fuera de juego de ${team||'el equipo'}.`};
+  if(slug.startsWith('var-')||slug.includes('referee-decision')){
+    const cleaned=raw.replace(/^VAR Decision:\s*/i,'').trim();
+    return {label:'VAR',color:'var(--gold)',text:`📺 Revisión del VAR${team?` en ${team}`:''}: ${cleaned||'el árbitro revisa una jugada polémica.'}`};
+  }
+  if(slug==='offside'){
+    return {label:'Fuera de juego',color:'var(--text2)',text:`🚩 Fuera de juego${p1?` de ${p1}`:''}${team?` (${team})`:''}.`};
+  }
+  if(slug==='handball'){
+    return {label:'Mano',color:'var(--red)',text:`✋ Mano de ${p1||'un jugador'}${team?` (${team})`:''}.`};
+  }
+  if(slug==='foul'){
+    return {label:'Falta',color:'var(--red)',text:`⚠️ Falta de ${p1||team||'un jugador'}${team&&p1?` (${team})`:''}${p2?` sobre ${p2}`:''}.`};
+  }
+  if(slug==='corner-awarded'){
+    return {label:'Córner',color:'var(--gold)',text:`🚩 Tiro de esquina para ${team||'el equipo'}.`};
+  }
+  if(slug==='shot-hit-woodwork'){
+    const assist=p2?` (asistencia de ${p2})`:'';
+    return {label:'¡Al palo!',color:'var(--gold)',text:`🥶 ¡Pega en el palo! ${p1||'El jugador'} de ${team||'su equipo'} se quedó a centímetros del gol${assist}.`};
+  }
+  if(slug==='shot-on-target'){
+    const assist=p2?` (asistencia de ${p2})`:'';
+    return {label:'Remate',color:'var(--gold)',text:`🎯 ¡Remate al arco! ${p1||'El jugador'} de ${team||'su equipo'} obliga a una gran atajada${assist}.`};
+  }
+  if(slug==='shot-off-target'){
+    const assist=p2?` (asistencia de ${p2})`:'';
+    return {label:'Remate',color:'var(--text2)',text:`😬 ${p1||'El jugador'} de ${team||'su equipo'} prueba suerte${assist}, pero el remate se va desviado.`};
+  }
+  if(slug==='shot-blocked'){
+    return {label:'Remate',color:'var(--text2)',text:`🛡️ Remate de ${p1||'el jugador'} (${team||'su equipo'}) que termina bloqueado por la defensa.`};
+  }
+  if(slug==='added-time'){
+    const mins=raw.match(/(\d+)\s+minutes?/i);
+    return {label:'Tiempo añadido',color:'var(--text2)',text: mins ? `⏱️ El cuarto árbitro añade ${mins[1]} minutos de descuento.` : '⏱️ Anuncian minutos de descuento.'};
+  }
+  if(slug==='info'){
+    if(/lineups are announced/i.test(raw)) return {label:'Info',color:'var(--text2)',text:'📋 Se anuncian las alineaciones, los jugadores hacen el calentamiento.'};
+    return {label:'Info',color:'var(--text2)',text: translateEventText(raw) || 'Novedad del partido.'};
   }
   if(slug.startsWith('goal')||ev.scoringPlay){
     const assist=p2?` Asistencia de ${p2}.`:'';
@@ -807,11 +857,19 @@ function describeEvent(ev){
   return {label:'Jugada',color:'var(--text2)',text:translateEventText(raw)||'Jugada del partido.'};
 }
 function parseEventMinute(minute){
-  if(!minute) return Number.MAX_SAFE_INTEGER;
-  const cleaned=String(minute).trim();
-  const match=cleaned.match(/(\d+)/);
-  if(!match) return Number.MAX_SAFE_INTEGER;
-  return Number(match[1]);
+  // -1 para "sin minuto conocido": siempre queda al final tanto ordenando
+  // de mas viejo a mas nuevo como al reves, porque ningun minuto real es
+  // negativo. Para descuento tipo "90'+4'" se combina el minuto base y el
+  // agregado (90*1000+4) para que ordene bien dentro del propio descuento;
+  // "&#39;" (apostrofe ya escapado) se vuelve a "'" antes de leer los
+  // numeros, porque el "39" del entity se colaba como si fuera un minuto.
+  if(!minute) return -1;
+  const cleaned=String(minute).replace(/&#39;/g,"'").trim();
+  const nums=cleaned.match(/\d+/g);
+  if(!nums) return -1;
+  const base=Number(nums[0]);
+  const extra=nums.length>1 ? Number(nums[1]) : 0;
+  return base*1000+extra;
 }
 
 // ===== PERSISTENCIA DE VISTA: recuerda la pestaña y el partido en vivo
@@ -843,8 +901,14 @@ function renderLiveView(){
   const lv=liveData[x.id]||''; const meta = x.id ? (liveMeta[x.id] || {}) : {};
   const detail=liveDetails[selectedMatchId]||{};
   const movement=meta.latestAction || meta.summary || '';
-  const score=meta.score ? `${meta.score.home} - ${meta.score.away}` : (played(x) ? `${x.hr} - ${x.ar}` : `${gtT(x.time)} GT`);
-  const minute=meta.minute || (detail.minute ? detail.minute : 'Por comenzar');
+  // Si el partido ya termino, se manda siempre el marcador/estado final
+  // (x.hr/x.ar + "Final"), sin importar por que via se entero la app de que
+  // termino (encuesta en vivo, resultado compartido o localStorage). Antes
+  // se miraba primero meta.score/meta.minute, que quedaban pegados en el
+  // ultimo dato en vivo cuando el partido se marcaba jugado por otra via
+  // (ej. data/results.json) y esta pantalla nunca se enteraba.
+  const score = played(x) ? `${x.hr} - ${x.ar}` : (meta.score ? `${meta.score.home} - ${meta.score.away}` : `${gtT(x.time)} GT`);
+  const minute = played(x) ? 'Final' : (meta.minute || (detail.minute ? detail.minute : 'Por comenzar'));
   // Cronologia completa del partido (no se recorta). Se muestra con lo mas
   // reciente arriba para que la ultima jugada quede pegada al marcador y no
   // haya que bajar toda la lista para ver que esta pasando ahora mismo.
@@ -897,12 +961,20 @@ async function loadMatchDetail(id){
     const response=await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${match.id}`,{cache:'no-store'});
     if(!response.ok) throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
-    const rawEvents=data.keyEvents||[];
+    // "keyEvents" solo trae lo mas relevante (goles, tarjetas, cambios,
+    // arranques/pausas). "commentary" es el relato jugada a jugada completo
+    // (faltas, corners, remates, fuera de juego, manos, VAR) y comparte el
+    // mismo id de jugada que keyEvents, asi que se combinan ambas fuentes.
+    const rawEvents=[...(data.keyEvents||[])];
+    (data.commentary||[]).forEach(c=>{ if(c.play) rawEvents.push(c.play); });
+
     // ESPN manda por duplicado los eventos de estado del partido (uno por
     // equipo, ej. las pausas de hidratacion) sin texto en uno de los dos;
     // esos se combinan en uno solo. Los eventos con jugadores (goles,
-    // cambios, tarjetas) nunca se combinan porque puede haber varios en el
-    // mismo minuto (ej. 3 cambios seguidos).
+    // cambios, tarjetas, faltas, remates) nunca se combinan por minuto
+    // porque puede haber varios en el mismo minuto (ej. 3 cambios seguidos);
+    // en su lugar se deduplican por el id de jugada de ESPN, que "commentary"
+    // suele repetir 2 veces con distinto texto narrativo para la misma jugada.
     const MATCH_STATE_SLUGS=new Set(['kickoff','start-2nd-half','start-extra-time','start-2nd-half-extra-time','end-extra-time','end-regular-time','end-match','halftime','halftime-extra-time','start-shootout','start-delay','end-delay']);
     const seen=new Map();
     rawEvents.forEach(ev=>{
@@ -918,12 +990,32 @@ async function loadMatchDetail(id){
         team: escapeHtml(toSpanishTeam(ev.team?.displayName||'')),
         scoringPlay: !!ev.scoringPlay,
         participants: (ev.participants||[]).map(p=>escapeHtml(p.athlete?.displayName)).filter(Boolean),
-        text: escapeHtml(ev.text || ev.shortText || '')
+        text: escapeHtml(toSpanishText(ev.text || ev.shortText || ''))
       };
       const key=MATCH_STATE_SLUGS.has(slug) ? `${slug}|${minute}` : `id:${ev.id}`;
       const prev=seen.get(key);
       if(!prev || (!prev.text && entry.text)) seen.set(key, entry);
     });
+
+    // Anuncios sueltos que solo aparecen en "commentary" sin jugada
+    // estructurada (alineaciones, minutos de descuento anunciados por el
+    // cuarto arbitro). Se omiten los que ya llegan como jugada estructurada
+    // por keyEvents (kickoff/start-2nd-half/halftime/end-regular-time/etc).
+    (data.commentary||[]).forEach((c,i)=>{
+      if(c.play) return;
+      const raw=(c.text||'').trim();
+      if(!raw || /half (begins|ends)|match ends/i.test(raw)) return;
+      const minute=escapeHtml(c.time?.displayValue||'');
+      seen.set(`info|${minute}|${i}`, {
+        minute,
+        slug: /added time/i.test(raw) ? 'added-time' : 'info',
+        team:'',
+        scoringPlay:false,
+        participants:[],
+        text: escapeHtml(toSpanishText(raw))
+      });
+    });
+
     const events=[...seen.values()].sort((a,b)=>parseEventMinute(a.minute)-parseEventMinute(b.minute));
     liveDetails[id]={
       minute: fmtClock(match.competitions?.[0]?.status || {}),
@@ -950,6 +1042,11 @@ async function fetchLive(){
   // el día del partido, seguimos intentando hasta obtener el resultado real.
   const pending=M.filter(x=>x.date<=today&&!played(x));
   if(!pending.length){
+    // Aunque ya no queden partidos pendientes por consultar en el scoreboard,
+    // si hay uno abierto en la vista en vivo igual se refresca su cronologia
+    // (por si termino justo via el resultado compartido y todavia no se
+    // habian traido sus eventos finales).
+    if(curTab==='live' && selectedMatchId!=null) await loadMatchDetail(selectedMatchId);
     if(sharedChanged){
       if(curTab==='hoy')renderHoy();
       else if(curTab==='partidos')renderPartidos();
@@ -1055,12 +1152,13 @@ async function fetchLive(){
     if(advanceBracket())changed=true;
 
     // La linea de tiempo (jugada a jugada) solo se cargaba una vez al abrir
-    // la vista en vivo; aqui se refresca junto con el resto de datos en vivo
-    // mientras el partido abierto siga en curso.
-    if(curTab==='live' && selectedMatchId){
-      const liveMatch=M.find(m=>m.id===selectedMatchId);
-      if(liveMatch && pending.includes(liveMatch)) await loadMatchDetail(selectedMatchId);
-    }
+    // la vista en vivo; aqui se refresca junto con el resto de datos en vivo.
+    // No se limita a "pending": si el resultado final llego por otra via
+    // (data/results.json compartido, localStorage) el partido ya figura
+    // como jugado y quedaria afuera de "pending", pero loadMatchDetail igual
+    // debe correr una ultima vez para traer los eventos finales; su propio
+    // guard interno (cache + jugado) evita pedirlo de mas despues de eso.
+    if(curTab==='live' && selectedMatchId!=null) await loadMatchDetail(selectedMatchId);
 
     const now=new Date().toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('lastUpd').textContent=`Actualizado ${now}`;
