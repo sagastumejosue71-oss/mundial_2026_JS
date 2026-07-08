@@ -70,12 +70,6 @@ body{background:var(--dark);color:var(--text);font-family:'Segoe UI',system-ui,s
 .pl{background:linear-gradient(90deg,#a01020,#e63946)}
 .pred-names{display:flex;justify-content:space-between;font-size:10px;color:var(--text2)}
 
-.ai-box{background:linear-gradient(135deg,rgba(168,85,247,.12),rgba(33,146,255,.08));border:1px solid rgba(168,85,247,.25);border-radius:10px;padding:10px 12px;margin-bottom:10px;cursor:pointer;transition:.2s}
-.ai-box:hover{border-color:rgba(168,85,247,.5)}
-.ai-lbl{font-size:10px;color:#7c3aed;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:4px}
-.ai-res{font-size:15px;font-weight:700;color:var(--text);margin-bottom:2px}
-.ai-det{font-size:11px;color:var(--text2)}
-
 .live-box{background:linear-gradient(135deg,rgba(230,57,70,.12),rgba(255,100,0,.08));border:1px solid rgba(230,57,70,.35);border-radius:10px;padding:10px 12px;margin-bottom:8px}
 .live-box-lbl{font-size:10px;color:var(--red);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
 .live-box-txt{font-size:13px;color:var(--text);line-height:1.5}
@@ -122,14 +116,6 @@ body{background:var(--dark);color:var(--text);font-family:'Segoe UI',system-ui,s
 .history-item .hi-team{font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .history-item .hi-meta{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px}
 .history-score{font-size:16px;font-weight:700;color:var(--gold);white-space:nowrap}
-
-/* IA */
-.ai-ta{width:100%;background:var(--dark2);border:1px solid var(--dark4);border-radius:10px;padding:10px 12px;color:var(--text);font-size:13px;resize:none;font-family:inherit;line-height:1.5;transition:.2s}
-.ai-ta:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(255,215,0,.1)}
-.ai-ta::placeholder{color:var(--text2)}
-.ai-resp{background:var(--dark2);border:1px solid var(--dark4);border-radius:10px;padding:12px;font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap;margin-top:10px}
-.qq{width:100%;background:var(--dark2);border:1px solid var(--dark4);border-radius:10px;padding:9px 14px;font-size:12px;cursor:pointer;color:var(--text2);text-align:left;font-family:inherit;margin-bottom:6px;transition:.2s}
-.qq:hover{border-color:var(--gold);color:var(--text)}
 
 .sec-ttl{font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:14px 0 8px 2px}
 .empty{text-align:center;color:var(--text2);padding:40px 0}
@@ -194,8 +180,9 @@ const CODES={
 };
 function flagImg(name, size=48){
   const c=CODES[name];
-  if(!c||c==='un') return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:#30363d;display:flex;align-items:center;justify-content:center;font-size:${size*0.5}px;margin:0 auto 5px">🏳️</div>`;
-  return `<img src="https://flagcdn.com/w80/${c}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:2px solid #30363d;display:block;margin:0 auto 5px;background:#21262d">`;
+  const safeName=escapeHtml(name||'Equipo por definir');
+  if(!c||c==='un') return `<div role="img" aria-label="${safeName}" style="width:${size}px;height:${size}px;border-radius:50%;background:#30363d;display:flex;align-items:center;justify-content:center;font-size:${size*0.5}px;margin:0 auto 5px">🏳️</div>`;
+  return `<img src="https://flagcdn.com/w80/${c}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" alt="${safeName}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;border:2px solid #30363d;display:block;margin:0 auto 5px;background:#21262d">`;
 }
 
 // ===== DATA =====
@@ -344,13 +331,20 @@ const M=[
 let liveData={}, liveMeta={}, filterStage='resultados', curTab='hoy', busy=false, liveIndex={}, selectedMatchId=null, liveDetails={}, historyMatches=[];
 
 // ===== UTILS =====
+// Escapa texto antes de insertarlo en innerHTML/atributos. Se usa tanto para
+// texto propio del usuario (ej. la casilla de busqueda) como para cualquier
+// texto que venga de ESPN (nombres, detalles de estado, jugadas), ya que ese
+// texto es de un tercero y no deberia poder inyectar HTML.
+function escapeHtml(str){
+  return String(str==null?'':str).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 const fmtD=d=>{const[,m,dy]=d.split('-');return `${parseInt(dy)} ${MONTHS[parseInt(m)]}`;};
 const gtT=t=>{const[h,m]=t.split(':').map(Number);let g=h-2;if(g<0)g+=24;return `${String(g).padStart(2,'0')}:${String(m).padStart(2,'0')}`;};
 const alarmT=t=>{const[h,m]=t.split(':').map(Number);let tot=h*60+m-40-120;if(tot<0)tot+=1440;return `${String(Math.floor(tot/60)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;};
 const played=x=>x.hr!==null&&x.ar!==null;
 function fmtClock(status){
   const display=(status?.displayClock||'').trim();
-  if(display) return display;
+  if(display) return escapeHtml(display);
   const raw=Number(status?.clock ?? 0);
   if(!Number.isFinite(raw) || raw<=0) return '';
   return `${Math.floor(raw/60)}'`;
@@ -564,47 +558,6 @@ function card(x, alarm=false){
   </div>`;
 }
 
-// ===== PRED DETAIL =====
-function predDetail(id){
-  const x=M.find(m=>m.id===id); if(!x)return;
-  const pr=pred(x);
-  Swal.fire({
-    background:'#161b22',color:'#e6edf3',
-    title:`<span style="font-size:16px">${x.h} vs ${x.a}</span>`,
-    html:`<div style="text-align:left">
-      <div style="background:#21262d;border-radius:10px;padding:14px;margin-bottom:10px;border:1px solid #30363d">
-        <div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🤖 Predicción IA</div>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-          <img src="https://flagcdn.com/w80/${CODES[pr.w]||'un'}.png" style="width:36px;height:36px;border-radius:50%;object-fit:cover">
-          <div>
-            <div style="font-size:20px;font-weight:700;color:#ffd700">${pr.w}</div>
-            <div style="font-size:13px">Marcador estimado: <b>${pr.s}</b></div>
-          </div>
-        </div>
-        <div style="font-size:12px;color:#8b949e">Confianza: <span style="color:#6fff9f;font-weight:700">${pr.c}%</span></div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <div style="flex:1;background:#004d26;border-radius:8px;padding:10px;text-align:center">
-          <img src="https://flagcdn.com/w80/${CODES[x.h]||'un'}.png" style="width:32px;height:32px;border-radius:50%;object-fit:cover;margin-bottom:4px">
-          <div style="font-size:18px;font-weight:700;color:#6fff9f">${x.ph}%</div>
-          <div style="font-size:10px;color:#8b949e">${x.h}</div>
-        </div>
-        <div style="flex:1;background:#2d3139;border-radius:8px;padding:10px;text-align:center">
-          <div style="font-size:24px;margin-bottom:4px">🤝</div>
-          <div style="font-size:18px;font-weight:700;color:#c0c8d4">${x.pd}%</div>
-          <div style="font-size:10px;color:#8b949e">Empate</div>
-        </div>
-        <div style="flex:1;background:#4d0011;border-radius:8px;padding:10px;text-align:center">
-          <img src="https://flagcdn.com/w80/${CODES[x.a]||'un'}.png" style="width:32px;height:32px;border-radius:50%;object-fit:cover;margin-bottom:4px">
-          <div style="font-size:18px;font-weight:700;color:#ff8a8a">${x.pa}%</div>
-          <div style="font-size:10px;color:#8b949e">${x.a}</div>
-        </div>
-      </div>
-    </div>`,
-    confirmButtonText:'Cerrar',confirmButtonColor:'#00a651',showCloseButton:true,width:'340px'
-  });
-}
-
 // ===== RENDERS =====
 function renderHoy(){
   const today=new Date().toISOString().slice(0,10);
@@ -633,7 +586,7 @@ function renderPartidos(){
 
   const prevSearch=document.getElementById('searchBox')?.value||'';
   let h=`<div class="fscroll">${chips.map(c=>`<button class="fchip${filterStage===c.k?' active':''}" onclick="setF('${c.k}')">${c.l}</button>`).join('')}</div>
-    <input id="searchBox" class="sbox" type="text" placeholder="🔍 Buscar equipo..." value="${prevSearch}" oninput="doSearch(this.value)">`;
+    <input id="searchBox" class="sbox" type="text" placeholder="🔍 Buscar equipo..." value="${escapeHtml(prevSearch)}" oninput="doSearch(this.value)">`;
   if(!filtered.length) h+=`<div class="empty"><i class="bi bi-search" style="font-size:32px;display:block;margin-bottom:8px"></i>Sin resultados</div>`;
   else filtered.forEach(x=>{h+=card(x);});
   document.getElementById('partidos').innerHTML=h;
@@ -674,14 +627,14 @@ function renderLlaves(){
       h+=`<div class="bm${isLive?' is-live':''}" onclick="openLiveView(${x.id})" style="${isLive?'border-color:var(--red)':''}">
         <div class="bt${hw?' win':''}">
           <span style="display:flex;align-items:center;gap:8px">
-            <img src="https://flagcdn.com/w80/${CODES[x.h]||'un'}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" style="width:22px;height:22px;border-radius:50%;object-fit:cover">
+            <img src="https://flagcdn.com/w80/${CODES[x.h]||'un'}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" alt="${escapeHtml(x.h)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">
             <span class="${x.h==='Por definir'?'tbd':''}">${x.h}</span>
           </span>
           <span class="bs">${showScore?hs:''}</span>
         </div>
         <div class="bt${aw?' win':''}">
           <span style="display:flex;align-items:center;gap:8px">
-            <img src="https://flagcdn.com/w80/${CODES[x.a]||'un'}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" style="width:22px;height:22px;border-radius:50%;object-fit:cover">
+            <img src="https://flagcdn.com/w80/${CODES[x.a]||'un'}.png" onerror="this.src='https://flagcdn.com/w80/un.png'" alt="${escapeHtml(x.a)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover">
             <span class="${x.a==='Por definir'?'tbd':''}">${x.a}</span>
           </span>
           <span class="bs">${showScore?as_:''}</span>
@@ -711,7 +664,7 @@ function renderStats(){
     const pct=Math.round(t[1]/gls*100);
     h+=`<div class="bm d-flex align-items-center justify-content-between">
       <div class="d-flex align-items-center gap-2">
-        <img src="https://flagcdn.com/w80/${CODES[t[0]]||'un'}.png" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
+        <img src="https://flagcdn.com/w80/${CODES[t[0]]||'un'}.png" alt="${escapeHtml(t[0])}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
         <span style="font-weight:600">${t[0]}</span>
       </div>
       <div class="d-flex align-items-center gap-2">
@@ -727,7 +680,7 @@ function renderStats(){
     <div class="d-flex flex-wrap gap-2">
       ${[['Francia','fr',22],['Argentina','ar',18],['Brasil','br',14],['España','es',12],['Alemania','de',9]].map(([t,c,p])=>`
       <div style="background:#21262d;border-radius:8px;padding:8px 10px;text-align:center;min-width:58px">
-        <img src="https://flagcdn.com/w80/${c}.png" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 4px">
+        <img src="https://flagcdn.com/w80/${c}.png" alt="${t}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 4px">
         <div style="font-size:11px;font-weight:600">${t}</div>
         <div style="font-size:13px;color:var(--gold);font-weight:700">${p}%</div>
       </div>`).join('')}
@@ -736,9 +689,9 @@ function renderStats(){
   </div>
   <div class="sec-ttl mt-2"><i class="bi bi-exclamation-triangle-fill" style="color:#ff6b00"></i> Sorpresas del torneo</div>
   <div class="bm" style="font-size:13px;line-height:2">
-    <div><img src="https://flagcdn.com/w80/ec.png" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Ecuador 2-1 <img src="https://flagcdn.com/w80/de.png" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Alemania</div>
-    <div><img src="https://flagcdn.com/w80/tr.png" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Türkiye 3-2 <img src="https://flagcdn.com/w80/us.png" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> USA</div>
-    <div><img src="https://flagcdn.com/w80/za.png" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Sudáfrica 1-0 <img src="https://flagcdn.com/w80/kr.png" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Corea del Sur</div>
+    <div><img src="https://flagcdn.com/w80/ec.png" alt="Ecuador" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Ecuador 2-1 <img src="https://flagcdn.com/w80/de.png" alt="Alemania" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Alemania</div>
+    <div><img src="https://flagcdn.com/w80/tr.png" alt="Türkiye" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Türkiye 3-2 <img src="https://flagcdn.com/w80/us.png" alt="USA" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> USA</div>
+    <div><img src="https://flagcdn.com/w80/za.png" alt="Sudáfrica" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Sudáfrica 1-0 <img src="https://flagcdn.com/w80/kr.png" alt="Corea del Sur" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle"> Corea del Sur</div>
   </div>`;
   document.getElementById('stats').innerHTML=h;
 }
@@ -748,7 +701,7 @@ function showFavs(){
     background:'#161b22',color:'#e6edf3',title:'🏆 Favoritos al título',
     html:`<div style="text-align:left">${[['Francia','fr',22,'Mbappé imparable. Mejor equipo del torneo.'],['Argentina','ar',18,'Messi en modo campeón. Defensa sólida.'],['Brasil','br',14,'Remontaron a Japón con gol en el 93\'.'],['España','es',12,'Yamal es el mejor joven del torneo.'],['Alemania','de',9,'Cayeron vs Ecuador pero siguen vivos.']].map(([t,c,p,d])=>`
       <div style="background:#21262d;border-radius:10px;padding:10px 12px;margin-bottom:8px;border:1px solid #30363d;display:flex;gap:12px;align-items:center">
-        <img src="https://flagcdn.com/w80/${c}.png" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0">
+        <img src="https://flagcdn.com/w80/${c}.png" alt="${t}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
             <span style="font-weight:700">${t}</span>
@@ -892,13 +845,14 @@ function renderLiveView(){
   const movement=meta.latestAction || meta.summary || '';
   const score=meta.score ? `${meta.score.home} - ${meta.score.away}` : (played(x) ? `${x.hr} - ${x.ar}` : `${gtT(x.time)} GT`);
   const minute=meta.minute || (detail.minute ? detail.minute : 'Por comenzar');
-  // Cronologia completa del partido, de principio (minuto 0) a fin, de
-  // arriba hacia abajo. No se recorta: se muestran todos los eventos.
+  // Cronologia completa del partido (no se recorta). Se muestra con lo mas
+  // reciente arriba para que la ultima jugada quede pegada al marcador y no
+  // haya que bajar toda la lista para ver que esta pasando ahora mismo.
   const events=[...(detail.events||[])];
   if(minute==='Entretiempo' && !events.some(ev=>ev.slug==='halftime')){
     events.push({minute:'45+',slug:'halftime',team:'',participants:[],text:''});
-    events.sort((a,b)=>parseEventMinute(a.minute)-parseEventMinute(b.minute));
   }
+  events.sort((a,b)=>parseEventMinute(b.minute)-parseEventMinute(a.minute));
   host.innerHTML=`
     <div class="ibox ig"><h3 style="color:var(--green)"><i class="bi bi-broadcast"></i> Vista en vivo</h3><p>Resumen del encuentro con minutos, tarjetas, faltas y jugadas clave.</p></div>
     <div class="mc" style="border-color:rgba(230,57,70,.35)">
@@ -952,16 +906,19 @@ async function loadMatchDetail(id){
     const MATCH_STATE_SLUGS=new Set(['kickoff','start-2nd-half','start-extra-time','start-2nd-half-extra-time','end-extra-time','end-regular-time','end-match','halftime','halftime-extra-time','start-shootout','start-delay','end-delay']);
     const seen=new Map();
     rawEvents.forEach(ev=>{
-      const minute=ev.clock?.displayValue || (ev.clock?.value!=null ? `${ev.clock.value}'` : '');
+      // ev.clock/team/participants/text vienen de ESPN (un tercero): se
+      // escapan aqui mismo, al leerlos, para que nunca lleguen sin escapar a
+      // un innerHTML mas adelante (describeEvent/renderLiveView).
+      const minute=escapeHtml(ev.clock?.displayValue || (ev.clock?.value!=null ? `${ev.clock.value}'` : ''));
       const slug=ev.type?.type || '';
       if(!slug) return;
       const entry={
         minute,
         slug,
-        team: toSpanishTeam(ev.team?.displayName||''),
+        team: escapeHtml(toSpanishTeam(ev.team?.displayName||'')),
         scoringPlay: !!ev.scoringPlay,
-        participants: (ev.participants||[]).map(p=>p.athlete?.displayName).filter(Boolean),
-        text: ev.text || ev.shortText || ''
+        participants: (ev.participants||[]).map(p=>escapeHtml(p.athlete?.displayName)).filter(Boolean),
+        text: escapeHtml(ev.text || ev.shortText || '')
       };
       const key=MATCH_STATE_SLUGS.has(slug) ? `${slug}|${minute}` : `id:${ev.id}`;
       const prev=seen.get(key);
@@ -1032,8 +989,11 @@ async function fetchLive(){
         const awayScore=awayTeam?.score ?? null;
         const state=status.state;
         const period=comp?.status?.period || '';
-        const detail=status.detail || '';
-        const lastPlay=comp?.situation?.lastPlay?.text || comp?.situation?.lastPlay?.shortText || '';
+        // status.detail y lastPlay son texto libre que manda ESPN (un
+        // tercero): se escapan aqui, antes de guardarlos en liveData/liveMeta,
+        // porque esos campos terminan interpolados en innerHTML mas adelante.
+        const detail=escapeHtml(status.detail || '');
+        const lastPlay=escapeHtml(comp?.situation?.lastPlay?.text || comp?.situation?.lastPlay?.shortText || '');
         const clockText=fmtClock(comp?.status || {});
 
         if(homeScore!==null&&awayScore!==null){
