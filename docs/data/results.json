@@ -187,5 +187,12 @@
     "win": "a",
     "hp": null,
     "ap": null
+  },
+  "102": {
+    "hr": 1,
+    "ar": 2,
+    "win": "a",
+    "hp": null,
+    "ap": null
   }
 }
